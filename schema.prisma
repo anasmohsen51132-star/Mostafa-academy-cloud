@@ -1,0 +1,309 @@
+// ============================================================
+// MUSTAFA ACADEMY — Prisma Schema
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- ENUMS ----
+
+enum Role {
+  OWNER
+  ADMIN
+  STUDENT
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+}
+
+// ---- USERS ----
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String   @unique
+  passwordHash String
+  role         Role     @default(STUDENT)
+  avatar       String?
+  isActive     Boolean  @default(true)
+  joinedAt     DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  redeemedCodes AccessCode[]     @relation("CodeRedeemer")
+  createdCodes  AccessCode[]     @relation("CodeCreator")
+  progress      Progress[]
+  submissions   QuizSubmission[]
+
+  @@index([phone])
+  @@index([role])
+}
+
+// ---- COURSES ----
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  icon        String   @default("📚")
+  color       String   @default("#1A6B47")
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  lectures CourseLecture[]
+  codes    CourseOnCode[]
+
+  @@index([isPublished])
+}
+
+// ---- LECTURES ----
+// Lectures are standalone and linked to courses via join table
+// allowing one lecture to appear in multiple courses
+
+model Lecture {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  courses  CourseLecture[]
+  videos   Video[]
+  pdfs     PDF[]
+  quizzes  Quiz[]
+  homework Homework[]
+  progress Progress[]
+}
+
+// ---- COURSE-LECTURE JOIN (many-to-many) ----
+
+model CourseLecture {
+  id        String   @id @default(cuid())
+  courseId  String
+  lectureId String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, lectureId])
+  @@index([courseId])
+  @@index([lectureId])
+}
+
+// ---- VIDEOS ----
+
+model Video {
+  id        String   @id @default(cuid())
+  lectureId String
+  title     String
+  youtubeId String   // Base64-encoded YouTube video ID for mild obfuscation
+  order     Int      @default(0)
+  duration  String?
+  createdAt DateTime @default(now())
+
+  lecture  Lecture    @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  progress Progress[]
+
+  @@index([lectureId])
+}
+
+// ---- PDFs ----
+
+model PDF {
+  id        String   @id @default(cuid())
+  lectureId String
+  title     String
+  fileUrl   String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@index([lectureId])
+}
+
+// ---- QUIZZES ----
+
+model Quiz {
+  id        String   @id @default(cuid())
+  lectureId String
+  title     String
+  timeLimit Int?     // minutes, null = unlimited
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lecture     Lecture          @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  questions   Question[]
+  submissions QuizSubmission[]
+
+  @@index([lectureId])
+}
+
+// ---- HOMEWORK ----
+
+model Homework {
+  id        String   @id @default(cuid())
+  lectureId String
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lecture   Lecture    @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  questions Question[]
+
+  @@index([lectureId])
+}
+
+// ---- QUESTIONS (shared between Quiz and Homework) ----
+
+model Question {
+  id         String       @id @default(cuid())
+  quizId     String?
+  homeworkId String?
+  text       String?
+  imageUrl   String?
+  type       QuestionType @default(MULTIPLE_CHOICE)
+  order      Int          @default(0)
+  createdAt  DateTime     @default(now())
+
+  quiz     Quiz?     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  homework Homework? @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  choices  Choice[]
+
+  @@index([quizId])
+  @@index([homeworkId])
+}
+
+// ---- CHOICES ----
+
+model Choice {
+  id         String   @id @default(cuid())
+  questionId String
+  text       String?
+  imageUrl   String?
+  isCorrect  Boolean  @default(false)
+  order      Int      @default(0)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+}
+
+// ---- ACCESS CODES ----
+
+model AccessCode {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  note        String?
+  createdAt   DateTime  @default(now())
+
+  // Who created it
+  createdById String
+  createdBy   User   @relation("CodeCreator", fields: [createdById], references: [id])
+
+  // Who redeemed it
+  usedById String?
+  usedAt   DateTime?
+  usedBy   User?   @relation("CodeRedeemer", fields: [usedById], references: [id])
+
+  // Which courses it unlocks
+  courses CourseOnCode[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([usedById])
+}
+
+// ---- CODE-COURSE JOIN ----
+
+model CourseOnCode {
+  codeId   String
+  courseId String
+
+  code   AccessCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  course Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@id([codeId, courseId])
+}
+
+// ---- PROGRESS ----
+
+model Progress {
+  id          String    @id @default(cuid())
+  userId      String
+  lectureId   String
+  videoId     String?
+  completed   Boolean   @default(false)
+  watchedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  video   Video?  @relation(fields: [videoId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, lectureId, videoId])
+  @@index([userId])
+  @@index([lectureId])
+}
+
+// ---- QUIZ SUBMISSIONS ----
+
+model QuizSubmission {
+  id          String   @id @default(cuid())
+  userId      String
+  quizId      String
+  score       Int
+  total       Int
+  percentage  Float
+  passed      Boolean
+  answers     Json     // Record<questionId, choiceId>
+  submittedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, quizId])
+  @@index([userId])
+  @@index([quizId])
+}
+
+// ---- SITE SETTINGS (singleton) ----
+
+model SiteSettings {
+  id               String   @id @default("singleton")
+  heroTitle        String   @default("اتقن اللغة العربية")
+  heroSubtitle     String   @default("مع نخبة من أفضل الأساتذة")
+  heroDesc         String   @default("انضم إلى آلاف الطلاب في رحلة تعليمية استثنائية تجمع بين الأصالة والحداثة")
+  teacherName      String   @default("مستر مصطفى")
+  teacherTitle     String   @default("خبير تدريس اللغة العربية")
+  teacherBio       String   @default("معلم متميز بخبرة تزيد عن خمس عشرة عاماً في تدريس اللغة العربية لجميع المراحل الدراسية")
+  teacherStats     Json     @default("[{\"value\":\"١٥+\",\"label\":\"سنة خبرة\"},{\"value\":\"٥٠٠٠+\",\"label\":\"طالب مستفيد\"},{\"value\":\"٩٨٪\",\"label\":\"نسبة نجاح\"}]")
+  features         Json     @default("[{\"icon\":\"📖\",\"title\":\"محتوى شامل\",\"desc\":\"دروس متكاملة تغطي جميع جوانب اللغة العربية\"},{\"icon\":\"🎯\",\"title\":\"تعلم هادف\",\"desc\":\"منهج مدروس يضمن التقدم المستمر\"},{\"icon\":\"💡\",\"title\":\"أسلوب مبتكر\",\"desc\":\"طرق تدريس حديثة تجعل التعلم ممتعاً\"}]")
+  statsBar         Json     @default("[{\"value\":\"٥٠٠٠+\",\"label\":\"طالب مسجل\"},{\"value\":\"٢٠\",\"label\":\"دورة متاحة\"},{\"value\":\"١٥+\",\"label\":\"سنة خبرة\"},{\"value\":\"٩٨٪\",\"label\":\"نسبة الرضا\"}]")
+  platformName     String   @default("اكاديمية مستر مصطفى")
+  platformTagline  String   @default("لتدريس اللغة العربية")
+  primaryColor     String   @default("#C9A84C")
+  accentColor      String   @default("#1A6B47")
+  loginBgGradient  String   @default("135deg, #0D3D27 0%, #1A6B47 100%")
+  dashboardBanner  String?
+  dashboardWelcome String   @default("أهلاً وسهلاً بك في منصتك التعليمية")
+  footerText       String   @default("© ٢٠٢٤ اكاديمية مستر مصطفى — جميع الحقوق محفوظة")
+  updatedAt        DateTime @updatedAt
+}
