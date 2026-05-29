@@ -35,7 +35,7 @@ export default async function LandingPage() {
             className="text-gold/60 text-sm font-amiri"
             style={{ fontFamily: "Amiri, serif" }}
           >
-            {settings?.footerText ?? "© 2026 اكاديمية مستر مصطفى — جميع الحقوق محفوظة"}
+            {settings?.footerText ?? "© ٢٠٢٤ اكاديمية مستر مصطفى — جميع الحقوق محفوظة"}
           </p>
         </footer>
       </main>
