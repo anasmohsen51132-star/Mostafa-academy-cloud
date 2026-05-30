@@ -4,25 +4,44 @@ import { extractToken, verifyToken } from "@/lib/auth";
 import { courseSchema } from "@/lib/validations";
 import { success, error, unauthorized, forbidden } from "@/lib/utils";
 import prisma from "@/lib/prisma";
+import type { AcademicLevel } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
     const token = extractToken(req);
     const payload = token ? await verifyToken(token) : null;
-
     const isAdmin = payload && (payload.role === "ADMIN" || payload.role === "OWNER");
 
+    // Build course filter
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const where: any = isAdmin ? {} : { isPublished: true };
+
+    // Level filter: students see courses for their level OR courses with no levels set
+    if (payload?.role === "STUDENT") {
+      const user = await prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { academicLevel: true },
+      });
+      if (user?.academicLevel) {
+        where.OR = [
+          { levels: { some: { academicLevel: user.academicLevel } } },
+          { levels: { none: {} } }, // courses with no level restriction = all levels
+        ];
+      }
+    }
+
     const courses = await prisma.course.findMany({
-      where: isAdmin ? {} : { isPublished: true },
+      where,
       include: {
         _count: { select: { lectures: true } },
+        levels: true,
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // If student, check which are unlocked via codes
+    // Determine which courses are unlocked for this student
     let unlockedCourseIds: string[] = [];
-    if (payload && payload.role === "STUDENT") {
+    if (payload?.role === "STUDENT") {
       const codes = await prisma.accessCode.findMany({
         where: { usedById: payload.sub },
         include: { courses: { select: { courseId: true } } },
@@ -53,9 +72,19 @@ export async function POST(req: NextRequest) {
     const parsed = courseSchema.safeParse(body);
     if (!parsed.success) return error(parsed.error.errors[0]?.message || "بيانات غير صحيحة");
 
+    const { levels, ...rest } = parsed.data;
+
     const course = await prisma.course.create({
-      data: parsed.data,
-      include: { _count: { select: { lectures: true } } },
+      data: {
+        ...rest,
+        levels: levels?.length
+          ? { create: levels.map((l) => ({ academicLevel: l as AcademicLevel })) }
+          : undefined,
+      },
+      include: {
+        _count: { select: { lectures: true } },
+        levels: true,
+      },
     });
     return success(course);
   } catch (e) {
