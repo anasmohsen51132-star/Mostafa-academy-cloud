@@ -1,44 +1,53 @@
-// src/app/api/auth/register/route.ts
+/ src/app/api/auth/register/route.ts
 import { NextRequest } from "next/server";
 import { registerSchema } from "@/lib/validations";
 import { hashPassword } from "@/lib/bcrypt";
 import { signToken, setAuthCookie } from "@/lib/auth";
 import { normalizePhone, success, error } from "@/lib/utils";
 import prisma from "@/lib/prisma";
+import { Role } from "@prisma/client";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {
-      const msg = parsed.error.errors[0]?.message || "بيانات غير صحيحة";
-      return error(msg);
+      return error(parsed.error.errors[0]?.message || "بيانات غير صحيحة");
     }
 
-    const { name, phone: rawPhone, password } = parsed.data;
+    const { name, phone: rawPhone, password, academicLevel } = parsed.data;
     const phone = normalizePhone(rawPhone);
 
-    // Check duplicate
     const existing = await prisma.user.findUnique({ where: { phone } });
-    if (existing) {
-      return error("رقم الهاتف مسجل بالفعل", 409);
-    }
+    if (existing) return error("رقم الهاتف مسجل بالفعل", 409);
 
     const passwordHash = await hashPassword(password);
 
-    // First registered user becomes OWNER if none exists
-    const ownerCount = await prisma.user.count({ where: { role: "OWNER" } });
-    const role = ownerCount === 0 ? "OWNER" : "STUDENT";
+    // First user ever becomes OWNER
+    const ownerCount = await prisma.user.count({ where: { role: Role.OWNER } });
+    const role: Role = ownerCount === 0 ? Role.OWNER : Role.STUDENT;
 
-    // Auto-avatar from first letter
-    const avatar = name.trim().charAt(0).toUpperCase();
+    const avatar = name.trim().charAt(0);
 
     const user = await prisma.user.create({
-      data: { name, phone, passwordHash, role, avatar },
-      select: { id: true, name: true, phone: true, role: true, avatar: true, joinedAt: true, isActive: true },
+      data: {
+        name,
+        phone,
+        passwordHash,
+        role,
+        academicLevel: role === Role.STUDENT ? academicLevel : null,
+        avatar,
+      },
+      select: {
+        id: true, name: true, phone: true, role: true,
+        academicLevel: true, avatar: true, joinedAt: true, isActive: true,
+      },
     });
 
-    const token = await signToken({ sub: user.id, phone: user.phone, role: user.role, name: user.name });
+    const token = await signToken({
+      sub: user.id, phone: user.phone,
+      role: user.role, name: user.name,
+    });
     await setAuthCookie(token);
 
     return success({ user, token });
@@ -47,3 +56,4 @@ export async function POST(req: NextRequest) {
     return error("حدث خطأ في الخادم", 500);
   }
 }
+
