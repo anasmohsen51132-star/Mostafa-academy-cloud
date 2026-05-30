@@ -7,7 +7,6 @@ import prisma from "@/lib/prisma";
 export async function GET(req: NextRequest) {
   const token = extractToken(req);
   if (!token) return unauthorized();
-
   const payload = await verifyToken(token);
   if (!payload) return unauthorized("انتهت الجلسة، سجل دخولك مجدداً");
 
@@ -16,7 +15,7 @@ export async function GET(req: NextRequest) {
       where: { id: payload.sub },
       select: {
         id: true, name: true, phone: true, role: true,
-        avatar: true, joinedAt: true, isActive: true,
+        academicLevel: true, avatar: true, joinedAt: true, isActive: true,
       },
     });
     if (!user || !user.isActive) return unauthorized("الحساب غير نشط");
@@ -31,3 +30,4 @@ export async function DELETE() {
   await clearAuthCookie();
   return success({ message: "تم تسجيل الخروج" });
 }
+
