@@ -1,5 +1,5 @@
 // ============================================================
-// MUSTAFA ACADEMY — Prisma Schema
+// MUSTAFA ACADEMY — Prisma Schema v2 (Academic Level Update)
 // ============================================================
 
 generator client {
@@ -11,7 +11,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---- ENUMS ----
+// ── ENUMS ──────────────────────────────────────────────────
 
 enum Role {
   OWNER
@@ -19,35 +19,42 @@ enum Role {
   STUDENT
 }
 
+enum AcademicLevel {
+  FIRST_SECONDARY   // الأول الثانوي
+  SECOND_SECONDARY  // الثاني الثانوي
+  THIRD_SECONDARY   // الثالث الثانوي
+}
+
 enum QuestionType {
   MULTIPLE_CHOICE
   TRUE_FALSE
 }
 
-// ---- USERS ----
+// ── USERS ──────────────────────────────────────────────────
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  phone        String   @unique
-  passwordHash String
-  role         Role     @default(STUDENT)
-  avatar       String?
-  isActive     Boolean  @default(true)
-  joinedAt     DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String         @id @default(cuid())
+  name           String
+  phone          String         @unique
+  passwordHash   String
+  role           Role           @default(STUDENT)
+  academicLevel  AcademicLevel? // required for students, null for admin/owner
+  avatar         String?
+  isActive       Boolean        @default(true)
+  joinedAt       DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
-  // Relations
-  redeemedCodes AccessCode[]     @relation("CodeRedeemer")
-  createdCodes  AccessCode[]     @relation("CodeCreator")
-  progress      Progress[]
-  submissions   QuizSubmission[]
+  redeemedCodes  AccessCode[]     @relation("CodeRedeemer")
+  createdCodes   AccessCode[]     @relation("CodeCreator")
+  progress       Progress[]
+  submissions    QuizSubmission[]
 
   @@index([phone])
   @@index([role])
+  @@index([academicLevel])
 }
 
-// ---- COURSES ----
+// ── COURSES ────────────────────────────────────────────────
 
 model Course {
   id          String   @id @default(cuid())
@@ -59,16 +66,27 @@ model Course {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relations
   lectures CourseLecture[]
   codes    CourseOnCode[]
+  levels   CourseOnLevel[]   // ← many-to-many with AcademicLevel
 
   @@index([isPublished])
 }
 
-// ---- LECTURES ----
-// Lectures are standalone and linked to courses via join table
-// allowing one lecture to appear in multiple courses
+// ── COURSE-LEVEL JOIN (many-to-many) ───────────────────────
+
+model CourseOnLevel {
+  courseId      String
+  academicLevel AcademicLevel
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, academicLevel])
+  @@index([academicLevel])
+}
+
+// ── LECTURES ───────────────────────────────────────────────
+// Standalone — linked to N courses via CourseLecture
 
 model Lecture {
   id          String   @id @default(cuid())
@@ -78,7 +96,6 @@ model Lecture {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relations
   courses  CourseLecture[]
   videos   Video[]
   pdfs     PDF[]
@@ -87,7 +104,7 @@ model Lecture {
   progress Progress[]
 }
 
-// ---- COURSE-LECTURE JOIN (many-to-many) ----
+// ── COURSE-LECTURE JOIN (many-to-many) ─────────────────────
 
 model CourseLecture {
   id        String   @id @default(cuid())
@@ -104,13 +121,13 @@ model CourseLecture {
   @@index([lectureId])
 }
 
-// ---- VIDEOS ----
+// ── VIDEOS ─────────────────────────────────────────────────
 
 model Video {
   id        String   @id @default(cuid())
   lectureId String
   title     String
-  youtubeId String   // Base64-encoded YouTube video ID for mild obfuscation
+  youtubeId String   // base64-encoded YouTube video ID
   order     Int      @default(0)
   duration  String?
   createdAt DateTime @default(now())
@@ -121,7 +138,7 @@ model Video {
   @@index([lectureId])
 }
 
-// ---- PDFs ----
+// ── PDFs ───────────────────────────────────────────────────
 
 model PDF {
   id        String   @id @default(cuid())
@@ -136,13 +153,13 @@ model PDF {
   @@index([lectureId])
 }
 
-// ---- QUIZZES ----
+// ── QUIZZES ────────────────────────────────────────────────
 
 model Quiz {
   id        String   @id @default(cuid())
   lectureId String
   title     String
-  timeLimit Int?     // minutes, null = unlimited
+  timeLimit Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -153,7 +170,7 @@ model Quiz {
   @@index([lectureId])
 }
 
-// ---- HOMEWORK ----
+// ── HOMEWORK ───────────────────────────────────────────────
 
 model Homework {
   id        String   @id @default(cuid())
@@ -168,7 +185,7 @@ model Homework {
   @@index([lectureId])
 }
 
-// ---- QUESTIONS (shared between Quiz and Homework) ----
+// ── QUESTIONS (shared Quiz + Homework) ─────────────────────
 
 model Question {
   id         String       @id @default(cuid())
@@ -188,22 +205,22 @@ model Question {
   @@index([homeworkId])
 }
 
-// ---- CHOICES ----
+// ── CHOICES ────────────────────────────────────────────────
 
 model Choice {
-  id         String   @id @default(cuid())
+  id         String  @id @default(cuid())
   questionId String
   text       String?
   imageUrl   String?
-  isCorrect  Boolean  @default(false)
-  order      Int      @default(0)
+  isCorrect  Boolean @default(false)
+  order      Int     @default(0)
 
   question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@index([questionId])
 }
 
-// ---- ACCESS CODES ----
+// ── ACCESS CODES ───────────────────────────────────────────
 
 model AccessCode {
   id          String    @id @default(cuid())
@@ -213,24 +230,21 @@ model AccessCode {
   note        String?
   createdAt   DateTime  @default(now())
 
-  // Who created it
   createdById String
   createdBy   User   @relation("CodeCreator", fields: [createdById], references: [id])
 
-  // Who redeemed it
-  usedById String?
-  usedAt   DateTime?
-  usedBy   User?   @relation("CodeRedeemer", fields: [usedById], references: [id])
+  usedById    String?
+  usedAt      DateTime?
+  usedBy      User?   @relation("CodeRedeemer", fields: [usedById], references: [id])
 
-  // Which courses it unlocks
-  courses CourseOnCode[]
+  courses     CourseOnCode[]
 
   @@index([code])
   @@index([isActive])
   @@index([usedById])
 }
 
-// ---- CODE-COURSE JOIN ----
+// ── CODE-COURSE JOIN ───────────────────────────────────────
 
 model CourseOnCode {
   codeId   String
@@ -242,17 +256,17 @@ model CourseOnCode {
   @@id([codeId, courseId])
 }
 
-// ---- PROGRESS ----
+// ── PROGRESS ───────────────────────────────────────────────
 
 model Progress {
-  id          String    @id @default(cuid())
-  userId      String
-  lectureId   String
-  videoId     String?
-  completed   Boolean   @default(false)
-  watchedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        String    @id @default(cuid())
+  userId    String
+  lectureId String
+  videoId   String?
+  completed Boolean   @default(false)
+  watchedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
@@ -263,7 +277,7 @@ model Progress {
   @@index([lectureId])
 }
 
-// ---- QUIZ SUBMISSIONS ----
+// ── QUIZ SUBMISSIONS ───────────────────────────────────────
 
 model QuizSubmission {
   id          String   @id @default(cuid())
@@ -273,7 +287,7 @@ model QuizSubmission {
   total       Int
   percentage  Float
   passed      Boolean
-  answers     Json     // Record<questionId, choiceId>
+  answers     Json
   submittedAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -284,7 +298,7 @@ model QuizSubmission {
   @@index([quizId])
 }
 
-// ---- SITE SETTINGS (singleton) ----
+// ── SITE SETTINGS (singleton) ──────────────────────────────
 
 model SiteSettings {
   id               String   @id @default("singleton")
@@ -307,3 +321,4 @@ model SiteSettings {
   footerText       String   @default("© ٢٠٢٤ اكاديمية مستر مصطفى — جميع الحقوق محفوظة")
   updatedAt        DateTime @updatedAt
 }
+
