@@ -4,6 +4,7 @@ import { extractToken, verifyToken } from "@/lib/auth";
 import { courseSchema } from "@/lib/validations";
 import { success, error, unauthorized, forbidden, notFound } from "@/lib/utils";
 import prisma from "@/lib/prisma";
+import type { AcademicLevel } from "@prisma/client";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -14,6 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const course = await prisma.course.findUnique({
       where: { id },
       include: {
+        levels: true,
         lectures: {
           include: {
             lecture: {
@@ -29,8 +31,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     });
 
     if (!course) return notFound("الكورس غير موجود");
-
-    // Students can only see published courses they've unlocked
     if (!payload || payload.role === "STUDENT") {
       if (!course.isPublished) return notFound("الكورس غير موجود");
     }
@@ -54,10 +54,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const parsed = courseSchema.partial().safeParse(body);
     if (!parsed.success) return error(parsed.error.errors[0]?.message || "بيانات غير صحيحة");
 
+    const { levels, ...rest } = parsed.data;
+
     const course = await prisma.course.update({
       where: { id },
-      data: parsed.data,
-      include: { _count: { select: { lectures: true } } },
+      data: {
+        ...rest,
+        ...(levels !== undefined && {
+          levels: {
+            deleteMany: {},
+            create: levels.map((l) => ({ academicLevel: l as AcademicLevel })),
+          },
+        }),
+      },
+      include: {
+        _count: { select: { lectures: true } },
+        levels: true,
+      },
     });
     return success(course);
   } catch {
@@ -71,7 +84,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const payload = token ? await verifyToken(token) : null;
   if (!payload) return unauthorized();
   if (payload.role !== "ADMIN" && payload.role !== "OWNER") return forbidden();
-
   try {
     await prisma.course.delete({ where: { id } });
     return success({ deleted: true });
